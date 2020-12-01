@@ -1,12 +1,13 @@
-"""
-R script necessary to analyse the thickness of different tissus
-"""
+###
+#R script necessary to analyse the thickness of different tissus
+###
 
 
 library(tidyverse)
 library(magrittr)
 library(agricolae)
 library(cowplot)
+library(ggplot2)
 
 ######## theme  #######
 theme_set(theme_cowplot(font_family = 'Times',font_size = 15,
@@ -29,7 +30,7 @@ text.14 <- element_text( size = 14,colour = 'black')
 
 ####Data#####
 
-tab <-  read.csv('../tableofvaluesforRstudio.csv')
+tab <-  read.csv('./output/tableofvaluesforRstudio.csv')
 #becarefull, in this table X column corresponds to the index table in python
 #attention dans le tab, il y a l'index du tab sous python
 tab %>% head()

@@ -1,3 +1,18 @@
+""" Ideas
+- use image processing package tools
+- resize image if necessary to improve runtime performance, if it doesn't affect results 
+- use edges functions to get points (or splines if possible) based on threshold
+- get points for each spline (could be tricky, or already done by edges function) this should be a spline 
+- get points in lines to be equaly distributed with interparc function (could be less)
+    source: https://stackoverflow.com/questions/18244305/how-to-redistribute-points-evenly-over-a-curve
+- get derivatives (tangents) for each point
+- get intersection of 2 lines L1 and L2
+    source: https://stackoverflow.com/questions/20677795/how-do-i-compute-the-intersection-point-of-two-lines
+
+
+more ideas after verifying how to compute tangents perpendicular
+"""
+
 # Creation de modules qui vont devoir s'imbriquer pour former une fonction ou
 # une classe bien particuliere.
 # elements necessaires pour l'analyse d'image
@@ -15,9 +30,11 @@ from scipy.signal import find_peaks
 
 import time
 
+import glob
+
 # import sys
 # import copy
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 # from matplotlib.pyplot import *
 
 
@@ -57,6 +74,7 @@ def tangent_point_old(image, Y):
 
 # new tangent_point function
 def tangent_point(image, y):
+    # ignore values of y in the limits of the image
     if y < 5 or y > image.shape[0]-6:
         return 'error'
 
@@ -68,9 +86,10 @@ def tangent_point(image, y):
     for i in r:
         im_int = image[i]
         lint = []
+        # get first point with values above threshold and breaks out of loop
         for k, j in enumerate(im_int):
             # k = x position
-
+    
             if j > 20:
                 lint += [k]
                 break
@@ -81,7 +100,8 @@ def tangent_point(image, y):
 
     return l_tangeante
 
-# function to calculate the coeficients of the derivative function y = a*x+b to reprecent the tangent
+# function to calculate the coeficients of the derivative function y = a*x+b to
+# reprecent the tangent
 # lst = l_tangeante
 def coef_tangent(lst):
     # coordonnees des extremite de la tangente
@@ -99,7 +119,8 @@ def coef_tangent(lst):
     b = y1 - a * x1
     return a, b
 
-# Function to get the perpendicular function coeficients of the original tangeant function
+# Function to get the perpendicular function coeficients of the original 
+# tangeant function
 # First get midle index y, then compute perpendicular line
 # a et b sont les coefficients directeurs de la tangeante
 # pente = -1/a (pente du perpendicular = -1/pente tangent)
@@ -109,7 +130,8 @@ def coef_perpendicular(lst, pente):
     pente = -1 / pente  # a' = -1/a'
     # interception entre tangente et perpendicular
     # coordonnees connues du point d'intersection Y
-    intersect = [i for i in lst if i[0] == Y][0] # this will always be the middle point, so no need to iterate
+    # this will always be the middle point, so no need to iterate
+    intersect = [i for i in lst if i[0] == Y][0]
     # y = a'x +b'
     # b' = y - a'x avec y = intersect[0] et x = intersect[1]
     origine = intersect[0] - pente * intersect[1]  # b'
@@ -121,15 +143,21 @@ def coef_perpendicular(lst, pente):
 # origine du perpendiculaire
 
 def perpendicular_points(shape, pente, origine):
+    # Create line point based on perpendicular function for entire image
     l_perp = []
     for x in range(shape[1]):
-        y = pente * x + origine
-        y = round(y, 0)
+        y = (int) (pente * x + origine)
+#         y = round(y, 0)
         l_perp += [(y, x)]
 
-    l_perp = [(int(i), int(j)) for i, j in l_perp]  # droite
+#     # convert to integers (not necessary)
+#     l_perp = [(int(i), int(j)) for i, j in l_perp]  # droite
+    
+    # Remove points that are not in image (not necessary)
     # que les points qui sont dans l'image
     l_perp = [i for i in l_perp if i[0] in range(shape[0])]
+    
+    # Remove points far from Y (the current image index)
     # qu'un segment pour ne pas aller trop loin
     # sens du segemnt est fonction du signe de la pente
     if pente > 0:
@@ -139,15 +167,19 @@ def perpendicular_points(shape, pente, origine):
 
     return l_perp
 
-
+# Function to get values of images for the points in the perpendicular line
+# and returns a table of x,y coordinates, the value, and if it is 
+# or not above threshold 
 # donne coordonnees du segment le long duquel on va mesurer l'intensité de fluo
 
 # im = im
-# lst = l_perp
+# lst = l_perp = Points of Line Perpendicular to tangent
 # threshold = 150 by default
 def fluo_values(im, lst, threshold=150):
     hist = []
     hist2 = []
+    
+    # get values of image for points at perpendicular line  
     for i, j in lst:
         val = im[i][j]
         hist += [val]
@@ -160,6 +192,7 @@ def fluo_values(im, lst, threshold=150):
     return tab_of_vals
 
 
+# Function to find filter the tab lines which values that are not above threshold  
 # tab = tab_of_vals
 def pic_finders(tab):
     peaks, _ = find_peaks(tab.valuebis)
@@ -168,14 +201,16 @@ def pic_finders(tab):
 
     return tab_of_peaks
 
-
+# Function that gets the distances between the first point in the Perpendicular
+# line and the following points (I'm not sure if it should be the first because of 
+# the perpendicular_points function that uses the code > range(Y - 10, Y + 130)
 # tab = tab_of_peaks
 def pic_distances(tab):
     if len(tab) >= 2:
         distance = []
         premierpic = tab.iloc[0]
         for i in range(len(tab)):
-            autre = tab.iloc[i]
+            autre = tab.iloc[i] # first autre == premierpic and d = 0 always 
             # pythagoras
             d = np.sqrt(np.square(premierpic.x - autre.x) + np.square(premierpic.y - autre.y))
             distance += [d]
@@ -195,6 +230,8 @@ print(os.getcwd())
 # Change current directory to filepath
 #filepath = '../201009_Ines_pictures/20201009/totest2/'
 filepath = './data/'
+fileExtention = '.tif'
+
 os.chdir(filepath)
 print('the current path is')
 print(os.getcwd())
@@ -210,7 +247,7 @@ d = []
 for image in lstofPic:
 
     # Checks if image is of type .tif
-    if not image.endswith('.tif'):
+    if not image.endswith(fileExtention) or image.startswith('.'):
         continue
     # image filename
     print(image)
@@ -267,6 +304,8 @@ for image in lstofPic:
 
         tab = pic_finders(tab)
         tab = pic_distances(tab)
+        
+        # Filter out points with distances over 130
         tab = tab[tab['Distance'] < 130]
         dct_test += [(i, tab)]
 
@@ -274,32 +313,21 @@ for image in lstofPic:
 
     print('fini')
 
+    # Create dictionary of dct_test
     dct_test = dict(dct_test)
+    
+    # Filter out values in dictionary that don't have info
     dct_test = {ki: vi for ki, vi in dct_test.items() if len(vi) > 1}
 
+    # convert back to list and append
     d += [(image, {ki: vi.to_dict('list') for ki, vi in dct_test.items()})]
 
 
 print("start_time2 %s seconds" % (time.time() - start_time2)) # 215 seconds total per image
 
+# convert to dictionary
 d = dict(d)
 
 # Write data d into file
-with open('../datafinal.json', 'a') as filetowrite:
+with open('../output/datafinal.json', 'a') as filetowrite:
     json.dump(d, filetowrite, indent=4)
-
-
-""" Ideas
-- use image processing package tools
-- resize image if necessary to improve runtime performance, if it doesn't affect results 
-- use edges functions to get points (or splines if possible) based on threshold
-- get points for each spline (could be tricky, or already done by edges function) this should be a spline 
-- get points in lines to be equaly distributed with interparc function (could be less)
-    source: https://stackoverflow.com/questions/18244305/how-to-redistribute-points-evenly-over-a-curve
-- get derivatives (tangents) for each point
-- get intersection of 2 lines L1 and L2
-    source: https://stackoverflow.com/questions/20677795/how-do-i-compute-the-intersection-point-of-two-lines
-
-
-more ideas after verifying how to compute tangents perpendicular
-"""

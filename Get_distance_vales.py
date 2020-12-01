@@ -8,18 +8,19 @@ import imageio
 import numpy as np
 
 import imageio
-#import numpy
 from matplotlib.pyplot import *
 import sys
 import copy
 
 #data
-data = '../table_filtered.json'
-data = './table_filtered.json'
+# data = '../table_filtered.json'
+data = './output/tab_filtered.json'
 
+# Open jason File
 with open(data,'r') as file:
 	ddd = json.load(file)
 
+# Loop trhough each image
 test = []
 for image in ddd:
 	data = ddd[image]
@@ -45,4 +46,4 @@ for i in tabletosave.columns:
                 test +=[re.sub('.tif','_A',i)]
 
 tabletosave.columns = test
-tabletosave.to_csv('../tableofvaluesforRstudio.csv')
+tabletosave.to_csv('./output/tableofvaluesforRstudio.csv')
