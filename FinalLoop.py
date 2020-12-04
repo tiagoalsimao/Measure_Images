@@ -149,7 +149,7 @@ def perpendicular_points(shape, pente, origine):
         y = (int) (pente * x + origine)
 #         y = round(y, 0)
         l_perp += [(y, x)]
-
+        
 #     # convert to integers (not necessary)
 #     l_perp = [(int(i), int(j)) for i, j in l_perp]  # droite
     

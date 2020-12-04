@@ -19,23 +19,23 @@ def intersections2coords(intersectionMultiPoint):
     
     # return multi points of intersection
     nPoints = len(intersectionMultiPoint)
-    xc = np.zeros(nPoints)
-    yc = np.zeros(nPoints)
+    xi = np.zeros(nPoints)
+    yi = np.zeros(nPoints)
     for i in range(nPoints):
-        xc[i] = intersectionMultiPoint[i].x
-        yc[i] = intersectionMultiPoint[i].y
-
-    return xc,yc
+        xi[i] = intersectionMultiPoint[i].x
+        yi[i] = intersectionMultiPoint[i].y
+    
+    return xi,yi
 
 # Given a set of points with coordinates x and y, returns the line[x,y]
 def coords2polyline(x,y):
-    return np.vstack((x, y)).T
+    return c_[x, y]
 
 def polyline2coords(polyline):
     return polyline[:,0],polyline[:,1]
 
 start_time = time.time()
-x = arange(0,10,0.1)
+x = arange(0,3,0.1)
 y1 = sin(x);
 y2 = cos(x);
 
@@ -50,10 +50,10 @@ line2 = LineString(PL2)
 
 lx1,ly1 = line1.coords.xy
 lx2,ly2 = line2.coords.xy
-xc,yc = intersections2coords(line1.intersection(line2))
+xi,yi = intersections2coords(line1.intersection(line2))
 
 print("start_time %s seconds" % (time.time() - start_time))
 plot(lx1,ly1,lx2,ly2)
-plot(xc,yc,'ro')
+plot(xi,yi,'ro')
 
 print ("end")
