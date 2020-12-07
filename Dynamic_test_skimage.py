@@ -1,7 +1,7 @@
 """
  * Python script to demonstrate Canny edge detection.
  *
- * usage: python CannyEdge.py <filename> <sigma> <low_threshold> <high_threshold>
+ * usage: python CannyEdge.py <filename> <sigma> <low_threshol> <high_threshold>
 """
 from distutils.command.install import install
 
@@ -29,14 +29,14 @@ reader = CziReader(cziImage).data[0]
 # read command-line arguments
 # filename = sys.argv[1]
 # sigma = float(sys.argv[2])
-# low_threshold = float(sys.argv[3])
+# low_threshol = float(sys.argv[3])
 # high_threshold = float(sys.argv[4])
 
 # filename = "C:/Users/tiago/eclipse-workspace/Measure_Images/data/07-junk.jpg"
 # filename = "C:/Users/tiago/eclipse-workspace/Measure_Images/data/20201125_CG1139KO/9024KO_db11_16h_1.czi"
 filename = "C:/Users/tiago/eclipse-workspace/Measure_Images/data/A5001_Db11_4-1.tif"
 sigma = 10.0
-low_threshold = 1.1 
+low_threshol = 1.1 
 high_threshold = 10.3
 
 # load and display original image as grayscale
@@ -47,14 +47,14 @@ image = skimage.io.imread(fname=filename, as_gray=True)
 edges = skimage.feature.canny(
     image=image,
     sigma=sigma,
-    low_threshold=low_threshold,
+    low_threshold=low_threshol,
     high_threshold=high_threshold,
 )
 
 edges_reader = skimage.feature.canny(
     image=reader,
     sigma=sigma,
-    low_threshold=low_threshold,
+    low_threshold=low_threshol,
     high_threshold=high_threshold,
 )
 
