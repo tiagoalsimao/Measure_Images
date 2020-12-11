@@ -16,6 +16,8 @@ import cv2
 from matplotlib.pyplot import *
 from PIL import Image
 import matplotlib.pyplot as plt
+import glob
+import os
 
 # get equidistante points (check if it is possible to use pchip to smooths changes)
 def getEquidistantPoints(outerLine):
@@ -37,9 +39,13 @@ def getEquidistantPoints(outerLine):
     
     return xn, yn
 
-def drawContours(img,contours):
-    imgDraw = img.copy()
-    cv2.drawContours(imgDraw , contours, -1, (0,255,0), 3)
+def drawContours(image,contours):
+    imgDraw = image.copy()
+    if len(imgDraw.shape) == 2:
+        imgDraw = imgDraw*255/np.max(imgDraw)
+        imgDraw = np.stack((imgDraw,)*3, axis=-1)
+    
+    cv2.drawContours(imgDraw, contours, -1, (0,255,0), 3)
     imshow(imgDraw)
 
 def intersections2coords(intersectionMultiPoint):
@@ -73,6 +79,8 @@ def getStartEndIndexes(arrayDiff):
                 return indS, indE
             
     return -1, -1
+
+
 plt.ion()
 # imageName = "9024KO_db11_16h_1.czi.tiff"
 # imageName = "9024KO_db11_3h_4.czi.tiff"
@@ -86,101 +94,91 @@ plt.ion()
 # imageName = "9024KO_db11_16h_8.czi.tiff"
 imageName = "9024KO_db11_16h_3.czi.tiff"
 
+# Input variables
 srcFolder = './data/20201125_CG1139KO/tif/'
+fileNameSpec = "*.tiff"
+
+# Destination folder to save images as tif
 plotFolder = './data/20201125_CG1139KO/plot/'
 
-img = cv.imread(srcFolder + imageName,0)
-subplot(2,3,1)
-imshow(img)
-img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
-imgray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+# List of Images
+imageList = glob.glob(srcFolder + fileNameSpec)
 
+# List length
+nList = len(imageList)
+
+# Loop through each image
+# for i in range(0,nList):
 for i in range(1):
+    
+    # Image name
+    imageName = os.path.basename(imageList[0])
+    
+    img = cv.imread(srcFolder + imageName,0)
+    img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
+    imgray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     
     # Filter image to eliminate
 #     imgrayBlur = imgray.copy()
-    kg = 3
+    kg = 11
     imgrayBlur = cv2.GaussianBlur(imgray, (kg, kg), 0)
 #     titleStr = "gaussBlurr " + str(kg)
     
     # adaptiveThreshold better for images with brightness differences
-    blockSize = 61
+    blockSize = 31
     thresh = cv2.adaptiveThreshold(255-imgrayBlur,1,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV,blockSize,2)
 #     titleStr = "blocksize " + str(blockSize)
+    
+    # remove small noise
+    ko = 2
+    kernelOpening = np.ones((ko, ko), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernelOpening)
+    thresh01 = thresh.astype(int)
     
     # Merge blocks
     kc = 8
     kernelClose = np.ones((kc, kc), np.uint8)    
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernelClose)
     
-    # remove small noise
-    ko = 5
-    kernelOpening = np.ones((ko, ko), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernelOpening)
-    thresh01 = thresh.astype(int)
+    # TODO: remove small noise with contours areas and contours fill
     
     # Get Outer Contours
     threshClosed = thresh.copy()
     kcbig = 70
     kernel = np.ones((kcbig, kcbig))
     threshClosed = cv2.morphologyEx(threshClosed, cv2.MORPH_CLOSE, kernel)
-    
     # Erode to have contours pass in the middle outer borders
-    ke = 5
-    kernelErode = np.ones((ke, ke))
-    threshClosed = cv2.morphologyEx(threshClosed, cv2.MORPH_ERODE, kernel = kernelErode)
+#     ke = 5
+#     kernelErode = np.ones((ke, ke))
+#     threshClosed = cv2.morphologyEx(threshClosed, cv2.MORPH_ERODE, kernel = kernelErode)
+    
+    # get contours of borders
     contoursBorder, _ = cv2.findContours(threshClosed,cv.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+    
+    # remove small contours
+    contoursBorderNew = []
+    for cb in contoursBorder:
+        if cv2.contourArea(cb) > 1e4:
+            contoursBorderNew.append(cb)
+        else
+            cv2.fillPoly(cb)
+    
+    
     
     contours, _ = cv2.findContours(thresh,cv.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
     
-    subplot(2,3,i+1)
-    drawContours(img, contours)
-#     title(titleStr)
-
-    if len(contoursBorder) != 1:
-        print("not yet done")
-    
-#     threshWithBorderContours = thresh.copy()
-#     
-#     # Add External contour to image with adaptative threshhold
-#     cv2.polylines(threshWithBorderContours ,contoursBorder,True,1,thickness=3)
-#     
-#     threshWithBorderContours = cv2.morphologyEx(threshWithBorderContours, cv2.MORPH_CLOSE, kernelClose)
-#     
-#     imshow(threshWithBorderContours)
-#     
-#     contours, hierarchy = cv2.findContours(threshWithBorderContours,cv.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-#     
-#     if hierarchy.shape[0] != 1:
-#         print ("not done")
-#     hierarchy = hierarchy[0]
-#     
-#     # filter contours that are points
-#     # how to filter contours and hierarchy? maybe remove contouturs firts
-#     # OR DRAW SMALL CONTOURS OVER IMAGE AND GET CONTOURS AGAIN
-#     contoursFilteredIndexes = []
-#     for c in range(len(contours)):
-#         area = cv2.contourArea(contours[c])
-#         if area > 1e2:
-#             contoursFilteredIndexes.append(c)
-#     
-#     
-#     contoursFiltered =  array(contours,dtype=object)[contoursFilteredIndexes]
+#     subplot(2,5,i+1)
+#     drawContours(img, contours)
 # 
-#     
-#     drawContours(contoursFiltered)
-#     # get level 1 hierarchy where contours have contour 0 as Parent
-#     hierarchy_Level1_indexes = where(hierarchy[:,3]==0)[0]
-#     
-#     # get level 2 hierarchy where contours have contours of Level 1 as Parent
-#     hierarchy_Level2_indexes = where(np.in1d(hierarchy[:,3],hierarchy_Level1_indexes))[0]
-#     
-#     imgDraw = img.copy()
-#     cv2.drawContours(imgDraw , contours, -1, (0,255,0), 3)
-#     
-#     # get Contour Points
-#     pixelsBorder = contours[0].reshape(-1,2)
-
+# if True:
+    newContours =[]
+    for c in contours:
+        if len(c) > 500:
+            newContours.append(c)
+    if len(newContours) != 1:
+        print("not Done")
+    
+    contours = newContours
     # get Contour Points
     pixelsBorder = contoursBorder[0].reshape(-1,2)
         
@@ -212,8 +210,8 @@ for i in range(1):
         
         x,y = getEquidistantPoints(outerLine)
         
-        # use pchip to make contours and respective tangents smoother
-#         x,y = ppval(ppchip(x,y))
+        # TODO: use pchip to make contours and respective tangents smoother
+        # x,y = ppval(ppchip(x,y))
         
         equidistantLine = np.c_[x, y]
         
@@ -227,18 +225,9 @@ for i in range(1):
         
         perpendicularPoints = perpendicularVectors*50 + equidistantLine[1:-1]
         
-#         
-# # plot
-# a = equidistantLine
-# a = a[1:-1]
-# b = perpendicularPoints
-# # plot(b[:,0],b[:,1],'ro')
-# c = c_[a,b,a].reshape(-1,2)
-# plot(c[:,0],c[:,1])
-# # plot(equidistantLine[:,0],equidistantLine[:,1])
-#         
-        # loop through each point to find the distance to the nearest contours
+        # TODO: sort or remove perpendicularPoints if they intersect (remove points that intersect the most lines
         
+        # loop through each point to find the distance to the nearest contours
         for p in range(perpendicularPoints.shape[0]):
             
             # Get image indexes using bresenham Line
@@ -263,271 +252,38 @@ for i in range(1):
             minDistPoints.append(pointS)
             linePoints.append(pointE)
         
-        # compute Distances
         
-            
-                
-#             pPoint = Point(equidistantLine[p+1])
-#             perpendicularLine = LineString([equidistantLine[p+1],perpendicularPoints[p]])
-            
-#             # get level2 contours to find the closest point
-#             minDist_L2 = Inf
-#             minDistPoint_2 = None
-#             for h in hierarchy_Level2_indexes:
-#                 # filter contours. need to find a way to filter before the for p loop
-#                 if cv2.contourArea(contours[h]) < 1e2:
-#                     continue
-#                 
-#                 # get contour Line (see if need to add last point to close contour)
-#                 contourLine = LineString(contours[h].reshape(-1,2))
-#                 
-#                 # verifit if perpendicular intersects contour Line
-#                 if perpendicularLine.intersects(contourLine):
-#                     # get all intersection points
-#                     iPoints = perpendicularLine.intersection(contourLine)
-#                     # loop through each intersection point to get the distance
-# #                     print(p,h)
-#                     if type(iPoints) is Point:
-#                         if pDist < minDist_L2:
-#                             minDist_L2 = pDist
-#                             minDistPoint_2 = ip
-#                     else:
-#                         for ip in iPoints:
-#                             pDist = pPoint.distance(iPoints)
-#                             # get the point with the minimum distance
-#                             if pDist < minDist_L2:
-#                                 minDist_L2 = pDist
-#                                 minDistPoint_2 = ip
-#             
-#             # get level1 contours to find the closest point
-#             minDist_L1 = Inf
-#             minDistPoint_1 = None
-#             for h in hierarchy_Level1_indexes:
-#                 # filter contours. need to find a way to filter before the for p loop
-#                 if cv2.contourArea(contours[h]) < 1e2:
-#                     continue
-#                 
-#                 # get contour Line (see if need to add last point to close contour)
-#                 contourLine = LineString(contours[h].reshape(-1,2))
-#                 
-#                 # verify if perpendicular intersects contour Line
-#                 if perpendicularLine.intersects(contourLine):
-#                     # get all intersection points
-#                     iPoints = perpendicularLine.intersection(contourLine)
-#                     # loop through each intersection point to get the distance
-# #                     print(p,h)
-#                     if type(iPoints) is Point:
-#                         # ignore
-#                         continue
-#                     else:
-#                         for ip_index in range(1,len(iPoints)):
-#                             ip = iPoints[ip_index]
-#                             pDist = pPoint.distance(iPoints)
-#                             # get the point with the minimum distance
-#                             if pDist < minDist_L1:
-#                                 minDist_L1 = pDist
-#                                 minDistPoint_1 = ip
-#             
-#             # add min distance point to list
-#             if minDistPoint_2 == None and minDistPoint_1 == None:
-#                 continue
-#             if minDistPoint_2 != None:
-#                 minDistPoints.append([minDistPoint_2.x,minDistPoint_2.y])
-#                 minDistList.append(minDist_L2)
-#             elif minDistPoint_1 != None:
-#                 minDistPoints.append([minDistPoint_1.x,minDistPoint_1.y])
-#                 minDistList.append(minDist_L1)
-#             else:
-#                 if minDist_L1 < minDist_L2:
-#                     minDistPoints.append([minDistPoint_1.x,minDistPoint_1.y])
-#                     minDistList.append(minDist_L1)
-#                 else:
-#                     minDistPoints.append([minDistPoint_2.x,minDistPoint_2.y])
-#                     minDistList.append(minDist_L2)
-        
-    a = array(minDistPoints)
-    b = array(linePoints)
-    c = c_[b,a,b].reshape(-1,2)
-        
-    imshow(img)
-    plot(a[:,0],a[:,1],'r.')
-    plot(b[:,0],b[:,1],'b.')
-    plot(c[:,0],c[:,1])
+    minDistPoints = array(minDistPoints)
+    linePoints = array(linePoints)
+    allLines = c_[linePoints,minDistPoints,linePoints].reshape(-1,2)
     
-    savefig(plotFolder + imageName + '.png')
+    # save Images in png file
+    plt.switch_backend('QT5Agg')
+    
+    imshow(img)
+    plot(minDistPoints[:,0],minDistPoints[:,1],'r.')
+    plot(linePoints[:,0],linePoints[:,1],'b.')
+    plot(allLines[:,0],allLines[:,1])
+    
+    figManager = plt.get_current_fig_manager()
+    figManager.window.showMaximized()
+    
+    savefig(plotFolder + imageName + '.eps', format='eps')
+    
+    # To maximaze window
+    plt.switch_backend('QT5Agg')
+    drawContours(thresh, contoursBorder)
+    
+    plot(minDistPoints[:,0],minDistPoints[:,1],'r.')
+    plot(linePoints[:,0],linePoints[:,1],'b.')
+    plot(allLines[:,0],allLines[:,1])
+    
+    figManager = plt.get_current_fig_manager()
+    figManager.window.showMaximized()
+
+    savefig(plotFolder + imageName + '_contours.png',dpi=300)
+    
     # compute Distance
     distance = sqrt(sum((b-a)**2,axis=1))
-    
-#             for 
-        
-#         print (max(x),max(y))
-#         contourImage[y.astype(int),x.astype(int)] = 1
-        
-#         subplot(233)
-#         plot(x,y)
-#         subplot(234)
-#         plot(x,y)
-        
-        # compute normal distances to inner contour
-        
-#     
-#     subplot(2,5,i+1)
-#     imshow(threshClosed1)
 
-drawContours(img,contours)
-plot(a[:,0],a[:,1],'ro')
-
-
-subplot(233)
-imshow(thresh)
-
-img1 = cv2.drawContours(img, contours, -1, (0,255,0), 3)
-subplot(2,3,3)
-imshow(img1)
-
-contoursFiltered=[]
-for i in range(len(contours)):
-    
-    cnt = contours[i]
-    # ignore contours with few points
-    if len(cnt) < 1e3:
-        continue
-    
-    area = cv.contourArea(cnt)
-    # ignore small areas
-    if area < 1e4:
-        continue
-    
-    print (area)
-    contoursFiltered.append(cnt)
-
-imgdraw = img.copy()
-cv2.drawContours(imgdraw, contoursFiltered, -1, (0,255,0), 3)
-subplot(234)
-imshow(imgdraw)
-
-contourImage = np.zeros(img.shape[0:2])
-for contourPoints in contoursFiltered:
-    if contourPoints.shape[1] != 1:
-        print ("verify shape of points")
-        contourImage = Image.fromarray(contourPoints)
-    contourPoints = contourPoints[:,0,:]
-#     
-#     # get points to remove
-#     c = np.concatenate((contourPoints[[0]],contourPoints))
-#      
-#     # remove distances above kernel 30,30
-#      
-# #     d = np.sum(np.abs(np.diff(c,axis=0)),axis=1)>100
-#     pointDistances = sqrt(sum(diff(c,axis=0)**2,axis=1))
-#  
-#     indexesD = np.where(pointDistances>100)
-
-    """
-    Instead of separating contour polylines by distance, simply
-    separate the if they reach the borders
-    if x == 0 or x == width or y == 0 or y == height
-    """
-    
-    # get indexes of points in the border of the image
-    breakContourIndexes = any(
-        c_[contourPoints[:,0] == 0,
-        contourPoints[:,1] == 0,
-        contourPoints[:,0] == img.shape[1],
-        contourPoints[:,1] == img.shape[0]],
-        axis=1)
-    
-    borderIndexes = np.where(breakContourIndexes)
-    
-    indexesToSplit = c_[borderIndexes[0],borderIndexes[0]+1].flatten()
-    
-    contourLines = np.split(contourPoints,indexesToSplit)
-    
-    contourEquidistantLines = []
-    for outerLine in contourLines:
-        # ignore short lines
-        if len(outerLine) < 5:
-            continue
-        
-        x,y = getEquidistantPoints(outerLine)
-
-        contourEquidistantLines.append(np.c_[x, y])
-        print (max(x),max(y))
-        contourImage[y.astype(int),x.astype(int)] = 1
-        
-        subplot(233)
-        plot(x,y)
-        subplot(234)
-        plot(x,y)
-#     contourPointsFiltered = contourPoints[d]
-
-
-
-# get inner contour
-for i in range(1):
-    k= 60
-    kernel = np.ones((k, k))
-    threshClosedEroded = cv2.erode(threshClosed,kernel,iterations = 1)
-    
-    innerthresh = thresh*threshClosedEroded # logical and
-    
-    ko = 3
-    kernelOpening = np.ones((ko, ko), np.uint8)
-    innerthresh = cv2.morphologyEx(innerthresh, cv2.MORPH_OPEN, kernelOpening)
-    
-    kc = 5
-    kernelClose = np.ones((kc, kc), np.uint8)
-    innerthresh = cv2.morphologyEx(innerthresh, cv2.MORPH_CLOSE, kernelClose)
-    
-#     subplot(2,5,6)
-#     imshow(innerthresh)
-
-
-innerContours, hierarchy = cv2.findContours(innerthresh,cv.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-
-innerthreshDraw = innerthresh*0
-innerthreshDraw = cv2.drawContours(innerthreshDraw, innerContours, -1, (0,255,0), 3)
-
-subplot(236)
-imshow(innerthreshDraw)
-
-subplot(236)
-# newMask = np.fmax(0,thresh*(1-contourImageDilated/2))
-newMask = thresh*(1-contourImageDilated/2)
-
-interiorImage = imgray*(1-contourImageDilated/2)
-imshow(interiorImage)
-
-ret,innerthresh = cv2.threshold(interiorImage,30,1,cv2.THRESH_BINARY)
-subplot(236)
-imshow(innerthresh)
-
-"""
-use approxPolyDP to get points of borders without any if the insides
-or use te contrary (ingnore points to far from source outerLine)
-"""
-
-
-cnt = contoursFiltered[0]
-M = cv.moments(cnt)
-print( M )
-
-# cx = int(M['m10']/M['m00'])
-# cy = int(M['m01']/M['m00'])
-
-area = cv.contourArea(cnt)
-
-perimeter = cv2.arcLength(cnt,True)
-epsilon = 1e3*cv2.arcLength(cnt,True)
-approx = cv2.approxPolyDP(cnt,epsilon,True)
-
-imgdraw2 = img
-cv2.drawContours(imgdraw2, [approx], -1, (255,0,0), 3)
-subplot(2,3,3)
-imshow(imgdraw2)
-
-hull = cv.convexHull(cnt)
-
-k = cv.isContourConvex(cnt)
-
-
+print("end")

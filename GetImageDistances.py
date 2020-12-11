@@ -1,169 +1,184 @@
-import glob
-import os
-import cv2
-from aicsimageio.readers import CziReader
+
+from numpy import *
+import numpy as np
+import cv2 as cv
+import cv2 as cv2
+from matplotlib.pyplot import *
+from PIL import Image
 import matplotlib.pyplot as plt
 
-import imageio
-import skimage
-import skimage.feature
-import skimage.viewer
-
-import numpy as np
-from numpy import *
-from matplotlib.pyplot import *
-
-# Input variables
-srcFolder = "./data/20201125_CG1139KO/"
-fileNameSpec = "*.czi"
-
-threshholdBlackWhite = 30
-
-# Destination folder to save images as tif
-destFolder = srcFolder + "tif/"
-
-# List of Images
-cziImageList = glob.glob(srcFolder + fileNameSpec)
-
-# List length
-nList = len(cziImageList)
-
-# Loop through each image
-for i in range(0,1+0*nList):
-
-    # Full path name of image
-    cziImageFullName = cziImageList[i]
+def getEquidistantPoints(line):
+    x,y = line.T
+    xd = np.diff(x)
+    yd = np.diff(y)
+    dist = np.sqrt(xd**2+yd**2)
+    u = np.cumsum(dist)
+    u = np.hstack([[0],u])
     
-    # Image name
-    cziImageFileName = os.path.basename(cziImageFullName)
+    dist_array = (x[:-1]-x[1:])**2 + (y[:-1]-y[1:])**2
+
+    lineLength = sum(sqrt(sum(diff(line,axis=0)**2,axis=1)))
+
+    t = np.linspace(0,u.max(),(lineLength/2).astype(int))
+    xn = np.interp(t, u, x)
+    yn = np.interp(t, u, y)
     
-    # Print current image to open
-    toPrint = str(i+1) + " of " + str(nList) + ": " + str(cziImageFileName)
-    print("Opening " + toPrint)
+    return xn, yn
+
+ion()
+imageName = "9024KO_db11_16h_1.czi.tiff"
+# imageName = "9024KO_db11_3h_4.czi.tiff"
+# imageName = "9024KO_db11_3h_7.czi.tiff"
+# imageName = "9024KO_db11_16h_7.czi.tiff"
+# imageName = "w1118_db11_16h_3.czi.tiff"
+# imageName = "w1118_sucrose_16h_9.czi.tiff"
+# imageName = "w1118_db11_16h_7.czi.tiff"
+# imageName = "9024KO_db11_3h_8.czi.tiff"
+# imageName = "w1118_db11_16h_1.czi.tiff"
+# imageName = "9024KO_db11_16h_8.czi.tiff"
+# imageName = "9024KO_db11_16h_3.czi.tiff"
+# imageName = "9024KO_db11_3h_8.czi.tiff"
+imageName = "w1118_db11_16h_1.czi.tiff"
+img = cv.imread('./data/20201125_CG1139KO/tif/' + imageName,0)
+subplot(2,3,1)
+imshow(img)
+img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
+imgray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+
+ret,thresh = cv2.threshold(imgray,20,1,cv2.THRESH_BINARY)
+
+# thresh = cv2.adaptiveThreshold(imgray,1,cv2.ADAPTIVE_THRESH_MEAN_C,
+#             cv2.THRESH_BINARY,11,2)
+# thresh = cv2.adaptiveThreshold(imgray,1,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+#             cv2.THRESH_BINARY,11,2)
+
+# kernel = np.ones((30, 30), np.uint8)
+# for i in range(10):
+# #     blockSize = 31
+#     blockSize = 3+i*100
+# #     C = 2+i*10
+#     C = 2
+#     # adaptiveThreshold better for images with brightness differences
+#     thresh = cv2.adaptiveThreshold(255-imgray,1,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV,blockSize,C)
+#     
+# #     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+#     
+#     subplot(2,5,i+1)
+#     imshow(thresh)
+
+subplot(2,3,2)
+imshow(thresh)
+
+kernel = np.ones((30, 30), np.uint8)
+thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+subplot(2,3,3)
+imshow(thresh)
+
+contours, hierarchy = cv2.findContours(thresh,cv.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+
+# img1 = cv2.drawContours(img, contours, -1, (0,255,0), 3)
+#    
+# subplot(2,3,4)
+# imshow(img1)
+
+contoursFiltered=[]
+for i in range(len(contours)):
     
-    # Try opening image
-    try:
-        # Open Image
-        cziImage = CziReader(cziImageFullName)
-                
-        # get real pixel size in meters
-        xPixelSizeMeters,yPixelSizeMeters,junk = cziImage.get_physical_pixel_size(1)
+    cnt = contours[i]
+    # ignore contours with few points
+    if len(cnt) < 1e3:
+        continue
+    
+    area = cv.contourArea(cnt)
+    # ignore small areas
+    if area < 1e4:
+        continue
+    
+    print (area)
+    contoursFiltered.append(cnt)
+
+# imgdraw = img
+# cv2.drawContours(imgdraw, contoursFiltered, -1, (0,255,0), 3)
+# subplot(2,3,4)
+# imshow(imgdraw)
+
+contourImage = np.zeros(img.shape[0:2])
+for contourPoints in contoursFiltered:
+    if contourPoints.shape[1] != 1:
+        print ("verify shape of points")
+#         contourImage = Image.fromarray(contourPoints)
+    contourPoints = contourPoints[:,0,:]
+    
+    # get points to remove
+    c = np.concatenate((contourPoints[[0]],contourPoints))
+    
+    # remove distances above kernel 30,30
+    
+    """
+    Instead of separating contour polylines by distance, simply
+    separate the if they reach the borders
+    if x == 0 or x == width or y == 0 or y == height
+    """
+#     d = np.sum(np.abs(np.diff(c,axis=0)),axis=1)>100
+    pointDistances = sqrt(sum(diff(c,axis=0)**2,axis=1))
+
+    indexesD = np.where(pointDistances>100)
+
+    contourLines = np.split(contourPoints,indexesD[0])
+    
+    contourEquidistantLines = []
+    for line in contourLines:
+        # ignore short lines
+        if len(line) < 5:
+            continue
         
-        # Convert pixel size to micrometers
-        xPixelSize = xPixelSizeMeters*1e6
-        yPixelSize = yPixelSizeMeters*1e6
-        
-        # Get Image as numpy array
-        image = cziImage.data[0]
-        
-        # get Image dimensions in pixels (Image is transposed)
-        imHeight,imWidth = image.shape
-        
-        # Correct image by changing (min,max) values to (0,255)
-        image = np.interp(image, (np.min(image), np.max(image)), (0, 255))
-        
-        # Plot image
-        plt.subplot(121)
-#         plt.imshow(image,cmap='gray', vmin=0, vmax=255,
-#                    extent=[0,xPixelSize*imWidth,0,yPixelSize*imHeight])
-        
-    except:
-        print ("unable to open " + cziImageFullName)
+        x,y = getEquidistantPoints(line)
+
+        contourEquidistantLines.append(np.c_[x, y])
+        print (max(x),max(y))
+        contourImage[y.astype(int),x.astype(int)] = 1
+#     contourPointsFiltered = contourPoints[d]
 
     
-    
-    
-    # correct image brightness
-    ratio = 0.5
-    im = cv2.convertScaleAbs(image, alpha = 1 / ratio, beta = 0)
-    
-    # correct image brightness source: https://stackoverflow.com/questions/57030125/automatically-adjusting-brightness-of-image-with-opencv
-    brightness = np.sum(image) / (255 * imHeight * imWidth)
-    minimum_brightness = 0.4
-    ratio = brightness / minimum_brightness
-    image = cv2.convertScaleAbs(image, alpha = 1 / ratio, beta = 0)
+kernel = np.ones((25, 25))
+contourImageDilated = cv2.dilate(contourImage,kernel,iterations = 1)
 
-    plt.subplot(122)
-    imageRGB = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    plt.imshow(imageRGB)
-#     plt.imshow(imageRGB,cmap='gray')
-    
-    # get image mask (0 and 1) using threshold
-    ret,imMask = cv2.threshold(image,threshholdBlackWhite,1,cv2.THRESH_BINARY)
-    
-#     plt.imshow(imMask,cmap='gray')
-    
-    # automatic threshold
-    blur = cv2.GaussianBlur(image,(5,5),0) # gaussian filter with 5 by 5 matrix
-    ret3,th3 = cv2.threshold(blur,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+subplot(235)
+imshow(contourImageDilated)
 
-#     plt.imshow(th3,cmap='gray')
-    
-    # closing  source: https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_morphological_ops/py_morphological_ops.html
-    kernel = np.ones((10, 10), np.uint8)
-    closing = cv2.morphologyEx(imMask, cv2.MORPH_CLOSE, kernel)
+subplot(236)
+newMask = np.fmax(0,thresh-contourImageDilated)
 
-    
-    # countour
-    contours, hierarchy = cv2.findContours(imMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
- 
-# Find Canny edges 
-edged = cv2.Canny(image, 30, 200) 
-# cv2.waitKey(0) 
-  
-# Finding Contours 
-# Use a copy of the image e.g. edged.copy() 
-# since findContours alters the image 
-contours, hierarchy = cv2.findContours(edged,  
-    cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
-  
-cv2.imshow('Canny Edges After Contouring', edged) 
-# cv2.waitKey(0) 
-  
-print("Number of Contours found = " + str(len(contours))) 
-  
-# Draw all contours 
-# -1 signifies drawing all contours 
-cv2.drawContours(image, contours, -1, (0, 255, 0), 3)
-  
-cv2.imshow('Contours', image) 
-# cv2.waitKey(0) 
-# cv2.destroyAllWindows()
+interiorImage = newMask*imgray
+imshow(interiorImage)
 
 
-    
-    
-sigma = 10.0
-low_threshold = 1.1 
-high_threshold = 10.3
+"""
+use approxPolyDP to get points of borders without any if the insides
+or use te contrary (ingnore points to far from source line)
+"""
 
-edges = skimage.feature.canny(
-    image=img,
-    sigma=sigma,
-    low_threshold=low_threshold,
-    high_threshold=high_threshold,
-)
 
-viewer = skimage.viewer.ImageViewer(edges)
-viewer.show()
+cnt = contoursFiltered[0]
+M = cv.moments(cnt)
+print( M )
 
-# Create the plugin and give it a name
-canny_plugin = skimage.viewer.plugins.Plugin(image_filter=skimage.feature.canny)
-canny_plugin.name = "Canny Filter Plugin"
+# cx = int(M['m10']/M['m00'])
+# cy = int(M['m01']/M['m00'])
 
-# Add sliders for the parameters
-canny_plugin += skimage.viewer.widgets.Slider(
-    name="sigma", low=0.0, high=7.0, value=2.0
-)
-canny_plugin += skimage.viewer.widgets.Slider(
-    name="low_threshold", low=0.0, high=1.0, value=0.1
-)
-canny_plugin += skimage.viewer.widgets.Slider(
-    name="high_threshold", low=0.0, high=1.0, value=0.2
-)
+area = cv.contourArea(cnt)
 
-# add the plugin to the viewer and show the window
-viewer += canny_plugin
-viewer.show()
+perimeter = cv2.arcLength(cnt,True)
+epsilon = 1e3*cv2.arcLength(cnt,True)
+approx = cv2.approxPolyDP(cnt,epsilon,True)
 
-input("Press Enter to continue...")
+imgdraw2 = img
+cv2.drawContours(imgdraw2, [approx], -1, (255,0,0), 3)
+subplot(2,3,3)
+imshow(imgdraw2)
+
+hull = cv.convexHull(cnt)
+
+k = cv.isContourConvex(cnt)
+
+print()

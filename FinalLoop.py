@@ -229,8 +229,8 @@ print(os.getcwd())
 
 # Change current directory to filepath
 #filepath = '../201009_Ines_pictures/20201009/totest2/'
-filepath = './data/'
-fileExtention = '.tif'
+filepath = './data/20201125_CG1139KO/tif/'
+fileExtention = '.tiff'
 
 os.chdir(filepath)
 print('the current path is')
@@ -239,6 +239,8 @@ print(os.getcwd())
 # get list of files in directory
 lstofPic = os.listdir()
 print(''.join([str(len(lstofPic)), ' pictures are presents in this directory']))
+
+plt.ion()
 
 # loop through each .tif image in folder
 start_time2 = time.time()
@@ -252,7 +254,10 @@ for image in lstofPic:
     # image filename
     print(image)
     im = imageio.imread(image)  # entree de la fonction ou de la classe
-
+    
+    if im.shape[0] < im.shape[1]:
+        im = np.rot90(im)
+    
     # image dimensions
     print(im.shape)
     shape = im.shape
@@ -285,6 +290,10 @@ for image in lstofPic:
     print('data is processing...')
     start_time7 = time.time()  # 140 seconds per image
 
+    pointS = []
+    pointE = []
+    pointF = []
+    pointI = []
     # Loop through each y index (again) to perform the magic
     dct_test = []
     for i in l_Y_of_i:
@@ -307,8 +316,32 @@ for image in lstofPic:
         
         # Filter out points with distances over 130
         tab = tab[tab['Distance'] < 130]
+        
+        if len(tab) > 1:
+            pointS.append((tab.x[tab.index[0]],tab.y[tab.index[0]]))
+            pointE.append((tab.x[tab.index[1]],tab.y[tab.index[1]]))
+            for f in range(2, len(tab)):
+                pointF.append((tab.x[tab.index[f]],tab.y[tab.index[f]]))
+        elif len(tab) == 1:
+            pointI.append((tab.x[tab.index[0]],tab.y[tab.index[0]]))
+        
         dct_test += [(i, tab)]
+    
+    pointI = np.array(pointI)
+    pointS = np.array(pointS)
+    pointE = np.array(pointE)
+    pointF = np.array(pointF)
+    lines = np.c_[pointS,pointE,pointS].reshape(-1,2)
+    
+    plt.clf()
+    plt.imshow(im)
+#     plt.plot(pointF[:,1],pointF[:,0],'b.')
+#     plt.plot(pointI[:,1],pointI[:,0],'m.')
+    plt.plot(lines[:,1],lines[:,0])
+    plt.plot(pointS[:,1],pointS[:,0],'g.')
+    plt.plot(pointE[:,1],pointE[:,0],'r.')
 
+    
     print("start_time7 %s seconds" % (time.time() - start_time7))
 
     print('fini')
