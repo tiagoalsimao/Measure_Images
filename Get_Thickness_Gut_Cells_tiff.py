@@ -2,7 +2,7 @@ import csv
 from install import install
 import os
 
-install("numpy")    
+install("numpy")
 install("cv2") # opencv-python
 install("matplotlib")
 install("scipy")
