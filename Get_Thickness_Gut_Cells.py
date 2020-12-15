@@ -1,16 +1,21 @@
 import csv
 from install import install
 import os
+from django.conf.locale import fa
 
 install("numpy")    
 install("cv2") # opencv-python
 install("matplotlib")
 install("scipy")
 install("skimage")
+install("aicsimageio")
 
+import datetime
+import aicsimageio
 import scipy.ndimage
 import scipy.signal
 import skimage.draw
+import skimage.morphology
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
@@ -31,33 +36,40 @@ from tkinter import Tk,messagebox # plt.plot msgBox
 imageName = "w1118_db11_16h_1.czi.tiff"
 
 ################### Input variables ###################
-srcFolder = './data/20201125_CG1139KO/tif/'
-fileNameSpec = "*.tiff"
+srcFolder = "./data/20201125_CG1139KO/"
+fileNameSpec = "*.czi"
 
-# number of points per pixel to compute distances
-distanceBetweenPointsInPixes = 5
+# Compute gut_thickness average and median
+bGet_gut_thickness = True
+# bGet_gut_thickness = False
 
 # Sort point such that there are no intersections (more or less)
 bSortPoints = True
 # bSortPoints = False
 
 # Write values to CSV
-writeFile = False
+writeFile = True
+# writeFile = False
 
 # Save each image plot one at a time
-showPlotImages = True
-# showPlotImages = False
+# showPlotImages = True
+showPlotImages = False
 
 # Save image plot (Takes much longer)
-savePlotImages = False
-# savePlotImages = True
+# savePlotImages = False
+savePlotImages = True
 
 # Destination folder to save images as tif
 plotFolder = './data/20201125_CG1139KO/plot/'
 
 #######################################################
 
-perpendicularVectorsLenght = 100
+# number of points per pixel to compute distances
+distanceBetweenPoints_px = 5
+
+# length of perpendicular vector
+perpendicularVectorsLenght_px = 100
+binaryThreshold = 20
 
 def msgBox(text):  
 #     top = Tk()
@@ -81,7 +93,7 @@ def sortNoIntersections(originalPoints,parallelPoints):
     for p in range(originalPoints.shape[0]-1):
         A = originalPoints[p]
         B = parallelPoints[p]
-        for t in range(p+1,np.min([p+100,parallelPoints.shape[0]])):
+        for t in range(p+1,np.min([p+perpendicularVectorsLenght_px,parallelPoints.shape[0]])):
             C = originalPoints[t]
             D = parallelPoints[t]
 
@@ -95,11 +107,9 @@ def sortNoIntersections(originalPoints,parallelPoints):
 # Get equidistant points from outerLine
 # Source: https://stackoverflow.com/questions/19117660/how-to-generate-equispaced-interpolating-values
 def getEquidistantPoints(line):
-    # get x and y coordinates of each point of line
-    x,y = line.T
     
     # get distance between each point
-    dist = np.sqrt(np.sum(np.diff(line,axis=0)**2,axis=1))
+    dist = np.linalg.norm(np.diff(line,axis=0),axis=1)
     
     # get array of cumulative sum of distances and add zero at first position
     u = np.r_[[0],np.cumsum(dist)]
@@ -107,8 +117,11 @@ def getEquidistantPoints(line):
     # get length total
     lineLength = np.sum(dist)
 
-    # Get evenly spaced values. Number of points is lineLength/distanceBetweenPointsInPixes
-    t = np.linspace(0,lineLength,(lineLength/distanceBetweenPointsInPixes).astype(int))
+    # Get evenly spaced values. Number of points is lineLength/distanceBetweenPoints_px
+    t = np.linspace(0,lineLength,(lineLength/distanceBetweenPoints_px).astype(int))
+    
+    # get x and y coordinates of each point of line
+    x,y = line.T
     
     # Linear Interpolation of x and y
     xn = np.interp(t, u, x)
@@ -122,7 +135,7 @@ def getThreshImage(image,tbin,ko,kc,kd,mode='binary',blockSize=21):
     # adaptiveThreshold better for images with brightness differences
     
     if mode=='binary':
-        _,imgMask = cv2.threshold(image,20,1,cv2.THRESH_BINARY)
+        _,imgMask = cv2.threshold(image,binaryThreshold,1,cv2.THRESH_BINARY)
         
     elif mode=='adaptative':
         imgMask = cv2.adaptiveThreshold(255-image,1,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV,blockSize,2)
@@ -192,14 +205,21 @@ nList = len(imageList)
 # List to write to CSV output file
 listToCSV=[]
 
+# Get current date to name output and figures
+dateTimeStr = str(datetime.datetime.now())[0:19]
+dateTimeStr = dateTimeStr.replace(':', 'h',1).replace(':','m')+'s'
+
 # try to open file
 if writeFile:
-    f = open('numbers2.csv', 'w', newline='')
+    f = open('output/numbers2' + dateTimeStr + '.csv', 'w', newline='')
+
+# number of errors
+nErrors = 0
 
 # Loop through each image
 for i in range(0,nList):
 # for i in range(20,50):
-# for i in range(1):
+# for i in range(5):
 #     i = 24
     
     plt.clf()
@@ -207,12 +227,27 @@ for i in range(0,nList):
     # Image name
     imageName = os.path.basename(imageList[i])
     
-    print("Processing " + str(i) + " of " + str(nList) + ": " + imageName)
+    print("Processing " + str(i+1) + " of " + str(nList) + ": " + imageName)
     
-    img = cv2.imread(srcFolder + imageName,0)
+    # Open Image
+    cziImage = aicsimageio.readers.CziReader(srcFolder + imageName)
     
-    # Rotate Image to horizontal to better view
-    if img.shape[0] > img.shape[1]:
+    # Get Image as numpy array
+    try:
+        img = cziImage.data[0]
+    except:
+        print ("Unable to open: " + imageName)
+        nErrors += 1
+        continue
+    
+    # Get real pixel size and convert to micrometers
+    pixelMetric = cziImage.get_physical_pixel_size(1)[0]*1e6
+    
+    # get Image dimensions in pixels (Image is transposed)
+    imHeight,imWidth = img.shape 
+    
+    # Rotate image to landscape for better view
+    if imHeight > imWidth:
         img = np.rot90(img)
         
     img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
@@ -222,22 +257,56 @@ for i in range(0,nList):
     kg = 11
     imgray = cv2.GaussianBlur(imgray, (kg, kg), 0)
     
+    # Image to int np.array to compute bresenhamLine
+    imgAsInt = imgray.astype(int)
+    
     # get image Mask based on binary threshold
     tbin = 20
     ko = 2
     kc = 31
-    kd = 10
+#     kd = 10
+    kd = 0
     imgMask = getThreshImage(imgray,tbin,ko,kc,kd)
     
     # get image Mask based on adaptative gaussian threshold
+    tbin = 20
+    ko = 2
+    kc = 31
+    kd = 10
     imgAdaptMask = getThreshImage(imgray,tbin,ko,kc,kd)
+    #     plt.imshow(imgAdaptMask)
     
-    # Image to int np.array to compute bresenhamLine
-    imgAsInt = imgray.astype(int)
+    ### Get gut Thickness
+    # make copy of Mask
+    imgMaskCopy = imgMask.copy()
+     
+    # Put image border pixels to zero
+    imgMaskCopy[[0,-1],:] = 0
+    imgMaskCopy[:,[0,-1]] = 0
+     
+    # Get distance Map to find and get biggest inscribed circle
+    # Source: answer by Yang, https://stackoverflow.com/questions/4279478/largest-circle-inside-a-non-convex-polygon?rq=1
+    dist_map = cv2.distanceTransform(imgMaskCopy, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+    _, radius, _, center = cv2.minMaxLoc(dist_map)
+     
+    # Get gut maximum thickness
+    max_gut_thickness = radius*2
     
-#     plt.imshow(imgMask)
+    if bGet_gut_thickness:
+        # Skeletonize image (this is slow try other method: ) 
+        skeleton = skimage.morphology.skeletonize(imgMask,method='zhang')
+        
+        # ignore values near image borders
+        radius_int = int(radius)
+        skeleton[:radius_int,:] = False
+        skeleton[imHeight-radius_int:,:] = False
+        skeleton[:,:radius_int] = False
+        skeleton[:,imWidth-radius_int:] = False
+        
+        # Get gut thickness
+        gut_thickness = dist_map[skeleton]*2
     
-    # get contours of borders
+    # get contours ocf borders
     contours, _ = cv2.findContours(imgMask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
     # Get only big contour
@@ -245,29 +314,38 @@ for i in range(0,nList):
     for contour in contours:
         # Take in account contours with big areas
         if cv2.contourArea(contour) > 1e5:
-            # Append first point to close contour
-            contoursList.append(np.r_[contour,contour[[0]]])
+            
+            # convert to 2D array
+            contour = contour.reshape(-1,2)
+            
+            # Find indexes of points that are in image borders
+            breakContourIndexes = np.any(
+                np.c_[contour [:,0] == 0,
+                contour [:,1] == 0,
+                contour [:,0] == imWidth-1,
+                contour [:,1] == imHeight-1],
+                axis=1)
+            
+            # Get consecutive points on image border
+            contourIndex = np.where(np.all(np.c_[breakContourIndexes[1:],breakContourIndexes[:-1]],axis=1))
+            
+            # Rearrange contour to start and finish at image border
+            contour = np.r_[contour[contourIndex[0][0]+1:],contour[:contourIndex[0][0]+1]]
+            
+            # Add contour to list
+            contoursList.append(contour)
+            
     
     # merge all loops in single 2D array
     contours = np.array(contoursList).reshape(-1,2)
     
-    # TODO: Get gut thickness
-    
-#     contourArea = cv2.contourArea(contours)
-#     
-#     import skimage.morphology
-#     
-#     skeleton = skimage.morphology.skeletonize(imgMask)
-#     
-#     gutThickness = contourArea/np.sum(skeleton)
-    
-    ## Split Contours into 2 lines
-    # find indexes that are in image borders
+    ## Split Contours
+    # Find indexes of points that are in image borders
     breakContourIndexes = np.any(
         np.c_[contours [:,0] == 0,
         contours [:,1] == 0,
-        contours [:,0] == img.shape[1]-1,
-        contours [:,1] == img.shape[0]-1],
+        contours [:,0] == imWidth-1,
+        contours [:,1] == imHeight-1],
         axis=1)
     
     # find indexes to split
@@ -285,8 +363,6 @@ for i in range(0,nList):
     # Initialize lists
     pointSList=[]
     pointEList=[]
-    pointFList=[]
-    contourIgnored = []
     
 #     newContourLines = np.array([])
     # Loop through each Line
@@ -294,7 +370,6 @@ for i in range(0,nList):
         
         # ignore short lines
         if len(outerLine) < 50:
-            contourIgnored.append(outerLine)
             continue
         
         # Get equidistant border Points/tangent Points
@@ -313,12 +388,17 @@ for i in range(0,nList):
         perpendicularVectors = perpendicularVectors/np.c_[vectorsNorm,vectorsNorm]
         
         # get perpendicular points by adding perpendicularVectors to Border Points
-        perpendicularPoints = perpendicularVectors*perpendicularVectorsLenght + equidistantLine[1:-1]
+        perpendicularPoints = perpendicularVectors*perpendicularVectorsLenght_px + equidistantLine[1:-1]
         
         # Sort perpendicular Points so lines don't intersect
-        if bSortPoints and distanceBetweenPointsInPixes < perpendicularVectorsLenght:
+        # TODO: a better way to get ordered points (see polyline offset, see: https://stackoverflow.com/questions/32772638/python-how-to-get-the-x-y-coordinates-of-a-offset-spline-from-a-x-y-list-of-poi)
+        if bSortPoints and distanceBetweenPoints_px < perpendicularVectorsLenght_px:
             perpendicularPoints = sortNoIntersections(equidistantLine[1:-1],perpendicularPoints)
         
+        # Initialize lists
+        pointSPeakList=[]
+        pointEPeakList=[]
+    
         # loop through each point to find the distance to the nearest contours
         for p in range(perpendicularPoints.shape[0]):
             
@@ -329,42 +409,78 @@ for i in range(0,nList):
             
             # remove indexes outside image
             bresenhamLine = bresenhamLine[np.where((bresenhamLine[:,0]>=0)*(bresenhamLine[:,1]>=0)*
-                    (bresenhamLine[:,0]<img.shape[1])*(bresenhamLine[:,1]<img.shape[0]))]
+                    (bresenhamLine[:,0]<imWidth)*(bresenhamLine[:,1]<imHeight))]
             
             # get line pixels from image
             imageValues = imgAsInt[bresenhamLine[:,1],bresenhamLine[:,0]]
             
             # Low pass filter to smooth the values
-            imageValues = scipy.ndimage.filters.uniform_filter1d(imageValues,10)
+            imageValues = scipy.ndimage.filters.uniform_filter1d(imageValues,2)
 #             imageValues[imageValues<20]=0
             
             # get local maxima
 #             peakIndexes = scipy.signal.find_peaks(np.diff(imageValues))
-            peakIndexes = scipy.signal.find_peaks(imageValues)
+            peakIndexes = scipy.signal.find_peaks(imageValues)[0]
             
             # Ignore point if there are no peaks
-            if len(peakIndexes[0]) < 2 or peakIndexes[0][0]>15:
-                if len(peakIndexes[0]) == 1:
-                    pointF = bresenhamLine[peakIndexes[0][0]]
-                    pointFList.append(pointF)
+            if len(peakIndexes) < 2:# or peakIndexes[0]>15:
+#                 if len(peakIndexes) == 1:
+#                     pointF = bresenhamLine[peakIndexes[0]]
+#                     pointFList.append(pointF)
                 continue
             
             # Get Start Point and End Point
-            pointS = bresenhamLine[peakIndexes[0][0]]
-            pointE = bresenhamLine[peakIndexes[0][1]]
+#             pointS = bresenhamLine[peakIndexes[0]]
+            pointS = equidistantLine[p+1]
+            if peakIndexes[0] > 35:
+                pointE = bresenhamLine[peakIndexes[0]]
+            else:
+                pointE = bresenhamLine[peakIndexes[1]]
             
             # Add Points to Lists
-            pointSList.append(pointS)
-            pointEList.append(pointE)
-    
+            pointSPeakList.append(pointS)
+            pointEPeakList.append(pointE)
+        
+        # Convert Points List to Array
+        pointSPeakList = np.array(pointSPeakList)
+        pointEPeakList = np.array(pointEPeakList)
+        
+        # Line to connect border points and respect perpendicular points 
+        allLines = np.c_[pointSPeakList,pointEPeakList,pointSPeakList].reshape(-1,2)
+        
+#         plt.imshow(img)
+#         plt.plot(pointSPeakList[:,0],pointSPeakList[:,1],'b.')
+#         plt.plot(pointEPeakList[:,0],pointEPeakList[:,1],'r.')
+#         plt.plot(allLines[:,0],allLines[:,1])
+        
+        # Get distances
+        cell_thickness_array = np.linalg.norm(pointEPeakList-pointSPeakList,axis=1)
+        
+        # Remove outliers
+        cell_thickness_array = scipy.signal.medfilt(cell_thickness_array)
+        
+        # Low Pass Filter (Smooth values)
+        cell_thickness_array = scipy.ndimage.filters.uniform_filter1d(cell_thickness_array,2)
+        
+        # Get peaks 
+        ind = scipy.signal.find_peaks(cell_thickness_array,distance = np.ceil(25/distanceBetweenPoints_px))[0]
+        
+        # Get Peak Points
+        pointSPeak = pointSPeakList[ind]
+        pointEPeak = pointEPeakList[ind]
+        
+        # Store peak Points
+        pointSList.append(pointSPeak)
+        pointEList.append(pointEPeak)
+
     # ignore if no points found
     if len(pointSList) == 0:
         continue
     
-    # Convert Points List to Array
-    pointSList = np.array(pointSList)
-    pointEList = np.array(pointEList)
-    pointFList = np.array(pointFList)
+    # Convert Points List to 2D Array
+    pointSList = np.vstack(pointSList)
+    pointEList = np.vstack(pointEList)
+#     pointFList = np.array(pointFList)
         
     if showPlotImages or savePlotImages:
         
@@ -383,15 +499,23 @@ for i in range(0,nList):
         
     # Save Images as png file in plotFolder
     if savePlotImages:
-        plt.savefig(plotFolder + imageName + '_plot.png',dpi=200)
+        plt.savefig(plotFolder + imageName + '_' + dateTimeStr + '_plot.png',dpi=200)
     
-    # compute cell thickness
-    cell_thickness = np.sqrt(np.sum((pointSList-pointEList)**2,axis=1))
+    # compute cell thickness (distance between points S and E
+    cell_thickness = np.linalg.norm(pointSList-pointEList,axis=1)
     
-    # add values to row list 
-    rowToCSV = imageName[:-9].split("_")
-    rowToCSV.append(np.round(np.mean(cell_thickness),4))
-    rowToCSV.append(np.round(np.median(cell_thickness),4))
+    ### Add values to row list (to populate csv file)
+    rowToCSV = imageName[:-len(fileNameSpec)+1].split("_")
+    
+    # Add cell_thickness
+    rowToCSV.append(np.round(np.mean(cell_thickness)*pixelMetric,4))
+    rowToCSV.append(np.round(np.median(cell_thickness)*pixelMetric,4))
+    
+    # Add gut_thickness
+    if bGet_gut_thickness:
+        rowToCSV.append(np.round(max_gut_thickness*pixelMetric,4))
+        rowToCSV.append(np.round(np.mean(gut_thickness)*pixelMetric,4))
+        rowToCSV.append(np.round(np.median(gut_thickness)*pixelMetric,4))
     
     # add row line to list to write in CSV file
     listToCSV.append(rowToCSV)
@@ -399,12 +523,19 @@ for i in range(0,nList):
 # Write values to csv file
 if writeFile:
     with f:
-    
+        
+        # open writer with semicolon delimiter
         writer = csv.writer(f)
+#         writer = csv.writer(f,delimiter=";")
+        
         # Write Header
-        writer.writerow(['Line','treat','td','gut','cell mean (um)','cell median (um)', 'gut thickness (um)'])
+        writer.writerow(['Line','treat','td','gut','cell mean (um)','cell median (um)',\
+            'gut thickness max (um)','gut thickness mean (um)', 'gut thickness median (um)'])
         
         for row in listToCSV:
             writer.writerow(row)
 
-msgBox("Finished.")
+if nErrors > 0:
+    msgBox("Finished.\n\nWarning! Some images were not processed: " + str(nErrors))
+else:
+    msgBox("Finished.")

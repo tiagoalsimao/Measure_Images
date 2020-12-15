@@ -49,6 +49,7 @@ for i in range(0,nList):
         img = cziImage.data[0]
     except:
         print ("unable to save " + cziImageFullName)
+        continue
         
     # get Image dimensions in pixels (Image is transposed)
     imHeight,imWidth = img.shape 
