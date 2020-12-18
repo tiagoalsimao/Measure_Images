@@ -1,7 +1,8 @@
+print("Loading modules...")
 import csv
 from install import install
 import os
-from django.conf.locale import fa
+import sys
 
 install("numpy")    
 install("cv2") # opencv-python
@@ -22,19 +23,6 @@ import matplotlib.pyplot as plt
 import glob
 from tkinter import Tk,messagebox # plt.plot msgBox
 
-# imageName = "9024KO_db11_16h_1.czi.tiff"
-# imageName = "9024KO_db11_3h_4.czi.tiff"
-# imageName = "9024KO_db11_3h_7.czi.tiff"
-# imageName = "9024KO_db11_16h_7.czi.tiff"
-# imageName = "w1118_db11_16h_3.czi.tiff"
-# imageName = "w1118_sucrose_16h_9.czi.tiff"
-# imageName = "w1118_db11_16h_7.czi.tiff"
-# imageName = "9024KO_db11_3h_8.czi.tiff"
-# imageName = "w1118_db11_16h_1.czi.tiff"
-# imageName = "9024KO_db11_16h_8.czi.tiff"
-# imageName = "9024KO_db11_16h_3.czi.tiff"
-imageName = "w1118_db11_16h_1.czi.tiff"
-
 ################### Input variables ###################
 srcFolder = "./data/20201125_CG1139KO/"
 fileNameSpec = "*.czi"
@@ -52,8 +40,8 @@ writeFile = True
 # writeFile = False
 
 # Save each image plot one at a time
-# showPlotImages = True
-showPlotImages = False
+showPlotImages = True
+# showPlotImages = False
 
 # Save image plot (Takes much longer)
 # savePlotImages = False
@@ -70,6 +58,19 @@ distanceBetweenPoints_px = 5
 # length of perpendicular vector
 perpendicularVectorsLenght_px = 100
 binaryThreshold = 20
+
+# imageName = "9024KO_db11_16h_1.czi.tiff"
+# imageName = "9024KO_db11_3h_4.czi.tiff"
+# imageName = "9024KO_db11_3h_7.czi.tiff"
+# imageName = "9024KO_db11_16h_7.czi.tiff"
+# imageName = "w1118_db11_16h_3.czi.tiff"
+# imageName = "w1118_sucrose_16h_9.czi.tiff"
+# imageName = "w1118_db11_16h_7.czi.tiff"
+# imageName = "9024KO_db11_3h_8.czi.tiff"
+# imageName = "w1118_db11_16h_1.czi.tiff"
+# imageName = "9024KO_db11_16h_8.czi.tiff"
+# imageName = "9024KO_db11_16h_3.czi.tiff"
+imageName = "w1118_db11_16h_1.czi.tiff"
 
 def msgBox(text):  
 #     top = Tk()
@@ -130,17 +131,19 @@ def getEquidistantPoints(line):
     # return line as np.array with [x,y] as coordinates
     return np.c_[xn, yn]
 
-def getThreshImage(image,tbin,ko,kc,kd,mode='binary',blockSize=21):
+def getThreshImage(image,ko,kc,kd,th_bin=binaryThreshold,mode='binary',blockSize=21):
     
     # adaptiveThreshold better for images with brightness differences
     
     if mode=='binary':
-        _,imgMask = cv2.threshold(image,binaryThreshold,1,cv2.THRESH_BINARY)
+        _,imgMask = cv2.threshold(image,th_bin,1,cv2.THRESH_BINARY)
         
     elif mode=='adaptative':
+        # Avoid error by ensuring blockSize is odd
+        blockSize = blockSize + (0 if ((blockSize % 2) == 1) else 1)
         imgMask = cv2.adaptiveThreshold(255-image,1,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV,blockSize,2)
     else:
-        print('mode \''+ mode +'\' not recugnized.', file=sys.stderr)
+        print('mode \''+ mode +'\' not recognized.', file=sys.stderr)
         sys.exit(1)
     
     # remove small noise
@@ -186,15 +189,76 @@ def getPerpendicularPointsThresh (imgMask,bresenhamLine):
     
     return pointS, pointE
 
-
-if showPlotImages or savePlotImages:
-    # To maximaze window
-    plt.switch_backend('QT5Agg')
-    figManager = plt.get_current_fig_manager()
-    figManager.window.showMaximized()
+def getGutThickness(imgMask):
+    # make copy of Mask
+    imgMaskCopy = imgMask.copy()
+     
+    # Put image border pixels to zero
+    imgMaskCopy[[0,-1],:] = 0
+    imgMaskCopy[:,[0,-1]] = 0
+     
+    # Get distance Map to find and get biggest inscribed circle
+    # Source: answer by Yang, https://stackoverflow.com/questions/4279478/largest-circle-inside-a-non-convex-polygon?rq=1
+    dist_map = cv2.distanceTransform(imgMaskCopy, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+    _, radius, _, center = cv2.minMaxLoc(dist_map)
+     
+    # Get gut maximum thickness
+    max_gut_thickness = radius*2
     
-    # Make plots appear immediately
-    plt.ion()
+    if bGet_gut_thickness:
+        # Skeletonize image (this is slow try other method: ) 
+        skeleton = skimage.morphology.skeletonize(imgMask,method='zhang')
+        
+        # ignore values near image borders
+        radius_int = int(radius)
+        skeleton[:radius_int,:] = False
+        skeleton[imHeight-radius_int:,:] = False
+        skeleton[:,:radius_int] = False
+        skeleton[:,imWidth-radius_int:] = False
+        
+        # Get gut thickness
+        gut_thickness = dist_map[skeleton]*2
+        
+        return max_gut_thickness, gut_thickness
+        
+    return max_gut_thickness, None
+
+def getPerpendicularPoints(equidistantLine):
+    # Get tanjentVectors with are the diference of the adjacent points
+    # i.e. if points are [P1, P2, P3, ... , Pn] then the tangent vectors
+    # will get [P3-P1, P4-P2, ..., Pn-P(n-2)]
+    tanjentVectors = equidistantLine[2:] - equidistantLine[:-2]
+    
+    # Get perpendicular vector by multiplying vectors with rotation matrix
+    perpendicularVectors = np.matmul(tanjentVectors,rotationMatrix)
+    
+    # normalize vectors
+    vectorsNorm = np.linalg.norm(perpendicularVectors,axis=1)
+    perpendicularVectors = perpendicularVectors/np.c_[vectorsNorm,vectorsNorm]
+    
+    # get perpendicular points by adding perpendicularVectors to Border Points
+    perpendicularPoints = perpendicularVectors*perpendicularVectorsLenght_px + equidistantLine[1:-1]
+    
+    # Sort perpendicular Points so lines don't intersect
+    # TODO: a better way to get ordered points (see polyline offset, see: https://stackoverflow.com/questions/32772638/python-how-to-get-the-x-y-coordinates-of-a-offset-spline-from-a-x-y-list-of-poi)
+    if bSortPoints and distanceBetweenPoints_px < perpendicularVectorsLenght_px:
+        perpendicularPoints = sortNoIntersections(equidistantLine[1:-1],perpendicularPoints)
+        
+    return perpendicularPoints
+
+def initializePlot():
+    if showPlotImages or savePlotImages:
+        # To maximaze window
+        plt.switch_backend('QT5Agg')
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
+        
+        # Make plots appear immediately
+        plt.ion()
+
+################## Script Start ##################
+print("starting script...")
+initializePlot()
 
 # List of Images
 imageList = glob.glob(srcFolder + fileNameSpec)
@@ -222,7 +286,9 @@ for i in range(0,nList):
 # for i in range(5):
 #     i = 24
     
-    plt.clf()
+    # for plot purpose
+    if showPlotImages or savePlotImages:
+        plt.clf()
     
     # Image name
     imageName = os.path.basename(imageList[i])
@@ -261,50 +327,23 @@ for i in range(0,nList):
     imgAsInt = imgray.astype(int)
     
     # get image Mask based on binary threshold
-    tbin = 20
+    binaryThreshold = 20
     ko = 2
     kc = 31
 #     kd = 10
     kd = 0
-    imgMask = getThreshImage(imgray,tbin,ko,kc,kd)
+    imgMask = getThreshImage(imgray,ko,kc,kd,binaryThreshold)
     
     # get image Mask based on adaptative gaussian threshold
-    tbin = 20
+    blockSize = 21
     ko = 2
     kc = 31
     kd = 10
-    imgAdaptMask = getThreshImage(imgray,tbin,ko,kc,kd)
-    #     plt.imshow(imgAdaptMask)
+    imgAdaptMask = getThreshImage(imgray,ko,kc,kd,mode='adaptative',blockSize=blockSize)
+    plt.imshow(imgAdaptMask)
     
-    ### Get gut Thickness
-    # make copy of Mask
-    imgMaskCopy = imgMask.copy()
-     
-    # Put image border pixels to zero
-    imgMaskCopy[[0,-1],:] = 0
-    imgMaskCopy[:,[0,-1]] = 0
-     
-    # Get distance Map to find and get biggest inscribed circle
-    # Source: answer by Yang, https://stackoverflow.com/questions/4279478/largest-circle-inside-a-non-convex-polygon?rq=1
-    dist_map = cv2.distanceTransform(imgMaskCopy, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
-    _, radius, _, center = cv2.minMaxLoc(dist_map)
-     
-    # Get gut maximum thickness
-    max_gut_thickness = radius*2
-    
-    if bGet_gut_thickness:
-        # Skeletonize image (this is slow try other method: ) 
-        skeleton = skimage.morphology.skeletonize(imgMask,method='zhang')
-        
-        # ignore values near image borders
-        radius_int = int(radius)
-        skeleton[:radius_int,:] = False
-        skeleton[imHeight-radius_int:,:] = False
-        skeleton[:,:radius_int] = False
-        skeleton[:,imWidth-radius_int:] = False
-        
-        # Get gut thickness
-        gut_thickness = dist_map[skeleton]*2
+    # Get gut thickness
+    max_gut_thickness, gut_thickness = getGutThickness(imgMask)
     
     # get contours ocf borders
     contours, _ = cv2.findContours(imgMask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
@@ -327,10 +366,12 @@ for i in range(0,nList):
                 axis=1)
             
             # Get consecutive points on image border
-            contourIndex = np.where(np.all(np.c_[breakContourIndexes[1:],breakContourIndexes[:-1]],axis=1))
+            contourIndex = np.where(np.all(
+                np.c_[breakContourIndexes[1:],breakContourIndexes[:-1]],
+                axis=1))[0]
             
             # Rearrange contour to start and finish at image border
-            contour = np.r_[contour[contourIndex[0][0]+1:],contour[:contourIndex[0][0]+1]]
+            contour = np.r_[contour[contourIndex[0]+1:],contour[:contourIndex[0]+1]]
             
             # Add contour to list
             contoursList.append(contour)
@@ -349,10 +390,10 @@ for i in range(0,nList):
         axis=1)
     
     # find indexes to split
-    contourIndexes = np.where(breakContourIndexes)
-    indexesToSplit = np.c_[contourIndexes[0],contourIndexes[0]+1].flatten()
+    contourIndexes = np.where(breakContourIndexes)[0]
+    indexesToSplit = np.c_[contourIndexes,contourIndexes+1].flatten()
     
-    # split contours
+    # split contours into lines when contour touches image border
     contourLines = np.split(contours,indexesToSplit)
     
     # matrix that performs a rotation of 90 degrees clockwise
@@ -365,7 +406,7 @@ for i in range(0,nList):
     pointEList=[]
     
 #     newContourLines = np.array([])
-    # Loop through each Line
+    # Loop through each outerLine
     for outerLine in contourLines:
         
         # ignore short lines
@@ -375,25 +416,8 @@ for i in range(0,nList):
         # Get equidistant border Points/tangent Points
         equidistantLine = getEquidistantPoints(outerLine)
         
-        # Get tanjentVectors with are the diference of the adjacent points
-        # i.e. if points are [P1, P2, P3, ... , Pn] then the tangent vectors
-        # will get [P3-P1, P4-P2, ..., Pn-P(n-2)]
-        tanjentVectors = equidistantLine[2:] - equidistantLine[:-2]
-        
-        # Get perpendicular vector by multiplying vectors with rotation matrix
-        perpendicularVectors = np.matmul(tanjentVectors,rotationMatrix)
-        
-        # normalize vectors
-        vectorsNorm = np.linalg.norm(perpendicularVectors,axis=1)
-        perpendicularVectors = perpendicularVectors/np.c_[vectorsNorm,vectorsNorm]
-        
-        # get perpendicular points by adding perpendicularVectors to Border Points
-        perpendicularPoints = perpendicularVectors*perpendicularVectorsLenght_px + equidistantLine[1:-1]
-        
-        # Sort perpendicular Points so lines don't intersect
-        # TODO: a better way to get ordered points (see polyline offset, see: https://stackoverflow.com/questions/32772638/python-how-to-get-the-x-y-coordinates-of-a-offset-spline-from-a-x-y-list-of-poi)
-        if bSortPoints and distanceBetweenPoints_px < perpendicularVectorsLenght_px:
-            perpendicularPoints = sortNoIntersections(equidistantLine[1:-1],perpendicularPoints)
+        # Get perpendicular Points
+        perpendicularPoints = getPerpendicularPoints(equidistantLine)
         
         # Initialize lists
         pointSPeakList=[]
@@ -402,7 +426,8 @@ for i in range(0,nList):
         # loop through each point to find the distance to the nearest contours
         for p in range(perpendicularPoints.shape[0]):
             
-            # Get image indexes using bresenham Line
+            # Get image indexes using bresenham line from 
+            # point equidistantLine[p+1] to point perpendicularPoints[p]
             bresenhamLine = np.array(skimage.draw.line(round(
                 equidistantLine[p+1,0]),round(equidistantLine[p+1,1]),
                 round(perpendicularPoints[p,0]),round(perpendicularPoints[p,1]))).T
@@ -419,7 +444,6 @@ for i in range(0,nList):
 #             imageValues[imageValues<20]=0
             
             # get local maxima
-#             peakIndexes = scipy.signal.find_peaks(np.diff(imageValues))
             peakIndexes = scipy.signal.find_peaks(imageValues)[0]
             
             # Ignore point if there are no peaks
