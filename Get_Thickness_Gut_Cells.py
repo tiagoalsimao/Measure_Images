@@ -40,12 +40,12 @@ writeFile = True
 # writeFile = False
 
 # Save each image plot one at a time
-showPlotImages = True
-# showPlotImages = False
+# showPlotImages = True
+showPlotImages = False
 
 # Save image plot (Takes much longer)
-# savePlotImages = False
-savePlotImages = True
+savePlotImages = False
+# savePlotImages = True
 
 # Destination folder to save images as tif
 plotFolder = './data/20201125_CG1139KO/plot/'
@@ -131,7 +131,7 @@ def getEquidistantPoints(line):
     # return line as np.array with [x,y] as coordinates
     return np.c_[xn, yn]
 
-def getThreshImage(image,ko,kc,kd,th_bin=binaryThreshold,mode='binary',blockSize=21):
+def getThreshImage(image,ko,kc,kd,ke,th_bin=binaryThreshold,mode='binary',blockSize=21):
     
     # adaptiveThreshold better for images with brightness differences
     
@@ -160,6 +160,11 @@ def getThreshImage(image,ko,kc,kd,th_bin=binaryThreshold,mode='binary',blockSize
     if kd > 0:
         kernelDilate = np.ones((kd, kd), np.uint8)    
         imgMask = cv2.morphologyEx(imgMask, cv2.MORPH_DILATE, kernelDilate)
+    
+    # Erode
+    if ke > 0:
+        kernelErode = np.ones((ke, ke), np.uint8)    
+        imgMask = cv2.morphologyEx(imgMask, cv2.MORPH_ERODE, kernelErode)
         
     return imgMask
 
@@ -239,11 +244,15 @@ def getPerpendicularPoints(equidistantLine):
     # get perpendicular points by adding perpendicularVectors to Border Points
     perpendicularPoints = perpendicularVectors*perpendicularVectorsLenght_px + equidistantLine[1:-1]
     
+    ''' TODO: A better way would be to get equidistant points from an offset polyline. This
+    would eliminate the low performance of the sort algorithm.
+    (see polyline offset, see: https://stackoverflow.com/questions/32772638/python-how-to-get-the-x-y-coordinates-of-a-offset-spline-from-a-x-y-list-of-poi)
+    '''
+    
     # Sort perpendicular Points so lines don't intersect
-    # TODO: a better way to get ordered points (see polyline offset, see: https://stackoverflow.com/questions/32772638/python-how-to-get-the-x-y-coordinates-of-a-offset-spline-from-a-x-y-list-of-poi)
     if bSortPoints and distanceBetweenPoints_px < perpendicularVectorsLenght_px:
         perpendicularPoints = sortNoIntersections(equidistantLine[1:-1],perpendicularPoints)
-        
+    
     return perpendicularPoints
 
 def initializePlot():
@@ -332,15 +341,31 @@ for i in range(0,nList):
     kc = 31
 #     kd = 10
     kd = 0
-    imgMask = getThreshImage(imgray,ko,kc,kd,binaryThreshold)
+    ke = 3
+    imgMask = getThreshImage(imgray,ko,kc,kd,ke,binaryThreshold)
+#     plt.imshow(imgMask)
     
-    # get image Mask based on adaptative gaussian threshold
-    blockSize = 21
-    ko = 2
-    kc = 31
-    kd = 10
-    imgAdaptMask = getThreshImage(imgray,ko,kc,kd,mode='adaptative',blockSize=blockSize)
-    plt.imshow(imgAdaptMask)
+    ''' TODO: Use a adapative threashold instead of a binary binary Threshold.
+    This would have a better result for image with variant brightness.
+    It could be computed two diferent adaptative thresholds,
+    1. the first one is to get the outer border of the gut, where a Contour Approximation
+    could be then be used to ignore small holes in the borders. We can then use drawline
+    to print the border to the image to connect all objects in the border. then we could
+    use the skeletonize only for the outer objects to get a perfect line passing in the
+    middle of the outer objects (the gut wall)
+    2. the second threshold should be use to get the inner contours to then compute the
+    distance from the borders to them. by drawing a perpendicular braham line from the
+    border to the interior of the gut, we should get the first True pixel of this line.
+    
+    for Contour Approximation see https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_contours/py_contour_features/py_contour_features.html
+    '''
+#     # get image Mask based on adaptative gaussian threshold
+#     blockSize = 21
+#     ko = 2
+#     kc = 31
+#     kd = 10
+#     imgAdaptMask = getThreshImage(imgray,ko,kc,kd,ke,mode='adaptative',blockSize=blockSize)
+#     plt.imshow(imgAdaptMask)
     
     # Get gut thickness
     max_gut_thickness, gut_thickness = getGutThickness(imgMask)
@@ -348,7 +373,7 @@ for i in range(0,nList):
     # get contours ocf borders
     contours, _ = cv2.findContours(imgMask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
-    # Get only big contour
+    # Process contours
     contoursList = []
     for contour in contours:
         # Take in account contours with big areas
@@ -375,7 +400,6 @@ for i in range(0,nList):
             
             # Add contour to list
             contoursList.append(contour)
-            
     
     # merge all loops in single 2D array
     contours = np.array(contoursList).reshape(-1,2)
@@ -396,6 +420,9 @@ for i in range(0,nList):
     # split contours into lines when contour touches image border
     contourLines = np.split(contours,indexesToSplit)
     
+    # Sort contours by reverse order of length
+    contourLines.sort(key=len, reverse=True)
+    
     # matrix that performs a rotation of 90 degrees clockwise
     # as image has y coordinates inverted (top is 0 and bottom is max)
     # this rotation matrix seems reflected
@@ -405,13 +432,20 @@ for i in range(0,nList):
     pointSList=[]
     pointEList=[]
     
-#     newContourLines = np.array([])
     # Loop through each outerLine
+    nContours = 0
     for outerLine in contourLines:
         
         # ignore short lines
         if len(outerLine) < 50:
             continue
+        
+        # Increment number of contours
+        nContours += 1
+        
+        # only allow two biggest contours
+        if nContours > 2:
+            break
         
         # Get equidistant border Points/tangent Points
         equidistantLine = getEquidistantPoints(outerLine)
