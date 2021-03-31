@@ -4,12 +4,12 @@ from install import install
 import os
 import sys
 
-install("numpy")    
-install("cv2") # opencv-python
-install("matplotlib")
-install("scipy")
-install("skimage")
-install("aicsimageio")
+# install("numpy")    
+# install("cv2") # opencv-python
+# install("matplotlib")
+# install("scipy")
+# install("skimage")
+# install("aicsimageio")
 
 import datetime
 import aicsimageio
@@ -40,8 +40,8 @@ writeFile = True
 # writeFile = False
 
 # Save each image plot one at a time
-# showPlotImages = True
-showPlotImages = False
+showPlotImages = True
+# showPlotImages = False
 
 # Save image plot (Takes much longer)
 savePlotImages = False
@@ -376,7 +376,7 @@ for i in range(0,nList):
     # Process contours
     contoursList = []
     for contour in contours:
-        # Take in account contours with big areas
+        # Take in account only contours with big areas
         if cv2.contourArea(contour) > 1e5:
             
             # convert to 2D array
@@ -401,7 +401,7 @@ for i in range(0,nList):
             # Add contour to list
             contoursList.append(contour)
     
-    # merge all loops in single 2D array
+    # merge all contours in single 2D array
     contours = np.array(contoursList).reshape(-1,2)
     
     ## Split Contours
