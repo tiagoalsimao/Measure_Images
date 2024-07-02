@@ -25,6 +25,8 @@ from tkinter import Tk,messagebox # plt.plot msgBox
 
 ################### Input variables ###################
 srcFolder = "./data/20201125_CG1139KO/"
+srcFolder = "C:/Users/tiago/Downloads/wetransfer_20210825_a5001timepoitsday1_2021-08-25_1415/20210825_A5001timepoitsday1/"
+
 fileNameSpec = "*.czi"
 
 # Compute gut_thickness average and median
@@ -49,6 +51,8 @@ savePlotImages = False
 
 # Destination folder to save images as tif
 plotFolder = './data/20201125_CG1139KO/plot/'
+
+plotFolder = 'C:/Users/tiago/Downloads/wetransfer_20210825_a5001timepoitsday1_2021-08-25_1415/20210825_A5001timepoitsday1/'
 
 #######################################################
 
